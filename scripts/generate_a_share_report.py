@@ -270,7 +270,7 @@ def enrich_with_deepseek(report: dict[str, Any]) -> None:
     import requests
 
     base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
-    model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    model = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
     compact = [{"code": item["code"], "name": item["name"], "industry": item["industry"], "price": item["price"], "score": item["score"], "metrics": item["metrics"]} for item in report["stocks"]]
     prompt = """你是严谨的A股研究编辑。只根据输入数字润色摘要，不得添加新闻、政策、公告、机构观点或未提供事实，不得修改任何数值，不得使用保证收益措辞。返回严格JSON：{\"items\":[{\"code\":\"6位代码\",\"reason\":\"不超过80字\",\"fundamentals\":\"不超过120字\",\"sentiment\":\"明确写量价情绪代理，不超过100字\",\"risk\":\"不超过100字\",\"invalidates\":\"不超过80字\"}]}。"""
     try:

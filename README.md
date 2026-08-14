@@ -62,7 +62,7 @@ AKShare 不需要注册或申请 Token，但它聚合的是公开网页接口，
 2. 在 `Secrets` 新建 `REPORT_INGEST_SECRET`。它必须和 Sites 服务端的同名变量完全一致，用来阻止他人写入周报。
 3. 私有 Sites 还需在 `Secrets` 新建 `SITES_BYPASS_TOKEN`，否则 GitHub Actions 会被登录页拦截；公开站点可留空。
 4. 在 `Variables` 新建 `DEEPSEEK_BASE_URL`，值为 `https://api.deepseek.com`。
-5. 在 `Variables` 新建 `DEEPSEEK_MODEL`，使用 DeepSeek 当前 API 支持的模型名；脚本默认值为 `deepseek-chat`。
+5. 在 `Variables` 新建 `DEEPSEEK_MODEL`，值为 `deepseek-v4-flash`（脚本默认值相同）。
 6. 在 `Variables` 新建 `DASHBOARD_INGEST_URL`，值为部署地址加 `/api/admin/stock-reports`。
 
 配置后打开 `Actions → Weekly A-share research report → Run workflow → Run workflow`。运行日志出现 `stored YYYY-Wxx with 10 picks` 即写入成功。若 DeepSeek 临时不可用，任务会使用确定性规则摘要继续写入，页面会明确显示摘要来源。
