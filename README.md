@@ -20,7 +20,9 @@ drizzle/
 .openai/hosting.json    Sites 与 D1 声明
 .env.example            只读连接变量示例（无真实密钥）
 tests/                  关键安全与产品约束测试
-scripts/                AKShare 周报生成脚本
+scripts/
+  generate_a_share_report.py  AKShare 只读抓取、评分、摘要和发布
+  short_trend.py              确认型 Pivot / BOS 纯函数
 .github/workflows/      每周六 20:00（北京时间）自动任务
 ```
 
@@ -50,9 +52,50 @@ Windows PowerShell 若限制 `npm.ps1`，使用 `npm.cmd ci` 与 `npm.cmd run de
 
 ## A 股第一阶段：免费数据 + DeepSeek
 
-工作流为 `AKShare 只读抓取 → 本地规则计算 → DeepSeek 可选摘要 → 鉴权 API → D1 → 看板`。默认每周六 20:00（北京时间）运行，也可在 GitHub 的 Actions 页面手动运行。先筛流动性、规模、PE/PB 与财务质量，再只为 40 个候选读取历史行情，计算 MA20/MA60、ATR14、20/60 日涨跌、量比、最大回撤、支撑与压力，最终选出最多 10 只；同一行业优先不超过 2 只。
+工作流为 `AKShare 只读抓取 → Python 确定性计算 → DeepSeek 可选摘要 → 鉴权 API → D1 → 看板`。默认每周六 20:00（北京时间）运行，也可在 GitHub 的 Actions 页面手动运行。先筛流动性、规模、PE/PB 与财务质量，再只为 40 个候选读取前复权（`qfq`）历史行情。中期趋势保留 MA20/MA60 与 20/60 日表现；短期趋势改用确认型 Swing Pivot、结构突破（BOS）、回踩、量能与市场风向，最终选出最多 10 只，同一行业优先不超过 2 只。
+
+日 K 先按日期升序排序并确定性去重，只保留 `dataAsOf` 及以前的有效已完成 K 线。工作日 15:15（北京时间）之前生成报告时，截止日自动回退一天，避免读取尚未结算的当日线；周末或休市日由数据源自然返回最近交易日。少于 61 个有效交易日时，`shortTrend.direction` 明确为 `insufficient_data`，不会伪造启动点。
+
+### 确认型短期趋势参数
+
+所有阈值集中在 `scripts/short_trend.py` 的 `TREND_CONFIG`，不散落魔法数字：
+
+| 参数 | 默认值 | 含义 |
+| --- | ---: | --- |
+| `left_bars` / `right_bars` | 3 / 3 | Pivot 左右窗口；右侧 3 根完成后才确认 |
+| `atr_period` | 14 | ATR 平均周期 |
+| `min_swing_pct` | 1.2% | 过滤微小摆动的最低价格幅度 |
+| `min_swing_atr` | 0.75 ATR | 过滤微小摆动的最低波动幅度 |
+| `breakout_buffer_pct` | 0.3% | 收盘形成有效 BOS 的缓冲 |
+| `startup_max_age_bars` | 5 | “启动”阶段最长交易日数 |
+| `startup_max_distance_atr` | 1 ATR | 启动阶段距突破位上限 |
+| `pullback_distance_atr` | 1 ATR | 回踩到突破位/结构支撑的容差 |
+| `extension_distance_atr` | 2.5 ATR | 距 EMA20 或结构位的过度延伸阈值 |
+| `volume_strong_ratio` / `volume_normal_ratio` | 1.5 / 1.2 | 强确认、一般确认量比阈值 |
+| `observation_band_atr` | 0.35 ATR | 结构观察区半宽 |
+| `stop_buffer_atr` | 0.5 ATR | 结构失效位外的风险缓冲 |
+| `atr_target_multiple` | 2 ATR | 单独展示的 ATR 目标参考 |
+| `min_reward_risk` | 2.0 | 输出观察区间的最低结构风险收益比 |
+
+上涨由“已确认 Swing Low 之后，收盘突破前一已确认 Swing High”启动；下跌使用镜像规则。连续同类型 Pivot 仅保留更极端者。每个 Pivot 保存 `confirmationLagBars`，BOS 扫描只能从相关 Pivot 已确认之后开始，因此不会用未来 K 线回填历史判断。支撑、压力、失效位来自本轮结构；创新高且上方没有已确认结构高点时，`structureResistance` 和兼容字段 `resistance` 为 `null`。`target` 是独立的 ATR 目标参考，不冒充历史压力位。趋势待确认、过度延伸或风险收益不足时，观察计划输出“等待确认”。
+
+趋势总分仍为 35 分：`trendDetail.mediumTerm` 最多 15 分，`trendDetail.shortTerm` 最多 20 分；`scoreBreakdown.trend` 保留两者之和，以兼容旧页面。DeepSeek 仅接收已经计算的 `shortTrend` 与 `marketWind` 来润色说明，不能重新判断方向、寻找启动点、计算价位或修改数字；失败时继续使用确定性摘要。
+
+### A 股短期市场风向
+
+锁定依赖为 `akshare==1.18.64`、`pandas==3.0.5`、`numpy==2.5.1`、`requests==2.34.2`。指数接口按该版本核验为：
+
+```python
+ak.stock_zh_index_daily_tx(symbol="sh000001", start_date="YYYYMMDD", end_date="YYYYMMDD")
+```
+
+报告读取上证指数 `sh000001`、沪深300 `sh000300`、创业板指 `sz399006`，分别计算 5/10/20 日涨跌、EMA5/10/20、价格相对 EMA20、EMA5 相对 EMA10 和 5 日/20 日均量比，再合成为 `risk_on`、`neutral`、`risk_off` 或 `unknown`。任一指数失败会在该指数标记 `unknown`；有效指数少于两个时报告级风向降级为 `unknown`，但不阻断个股周报。
+
+`schemaVersion=2` 把 `shortTrend` 放在每只股票下并新增报告级 `marketWind`。旧的 `support`、`resistance`、`buyZoneLow`、`buyZoneHigh`、`stopLoss`、`target` 仍保留，但由新结构算法派生。D1 继续将完整报告存入 `stock_reports.report_json`，所以本次不需要数据库迁移；读取端仍可展示缺少 `shortTrend` 的 `schemaVersion=1` 历史报告。
 
 AKShare 不需要注册或申请 Token，但它聚合的是公开网页接口，可能因上游字段、限流或休市而暂时失败，不适合作为盘中交易行情。这里固定用于周频研究，不用于自动交易。
+
+算法方法仅参考 `sepa-strategy` 的趋势结构思路和 InvestSkill 的多周期/数据验证原则。第三方仓库没有被安装或执行，也没有获得网络、Secrets、账户、下单或仓位权限；本项目只保留自行实现、可重复测试的只读纯函数。
 
 ### GitHub 必填配置
 
@@ -71,6 +114,7 @@ AKShare 不需要注册或申请 Token，但它聚合的是公开网页接口，
 
 ```bash
 npm test
+npm run lint
 npm run build
 ```
 
