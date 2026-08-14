@@ -39,7 +39,7 @@ test("weekly A-share reports use authenticated server-side ingestion", async () 
   assert.match(ingest, /authorization/);
   assert.match(ingest, /REPORT_INGEST_SECRET/);
   assert.match(ingest, /onConflictDoUpdate/);
-  assert.match(latest, /status, "success"/);
+  assert.match(latest, /inArray\(stockReports\.status, \["success", "partial"\]\)/);
 });
 
 test("real stock mode reads persisted reports and has no trading path", async () => {
