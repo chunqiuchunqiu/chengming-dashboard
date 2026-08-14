@@ -36,7 +36,8 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DEEPSEEK_BASE_URL: ${{ vars.DEEPSEEK_BASE_URL }}
           DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL }}
-          DASHBOARD_INGEST_URL: ${{ vars.DASHBOARD_INGEST_URL }}
+          # Public endpoint, not a credential. Keeping it here avoids copy/paste truncation in Actions Variables.
+          DASHBOARD_INGEST_URL: https://chengming-personal-board.cloudy-chick-2433.chatgpt.site/api/admin/stock-reports
           REPORT_INGEST_SECRET: ${{ secrets.REPORT_INGEST_SECRET }}
           SITES_BYPASS_TOKEN: ${{ secrets.SITES_BYPASS_TOKEN }}
         shell: bash
