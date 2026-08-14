@@ -61,6 +61,28 @@ class ReportMathTests(unittest.TestCase):
         self.assertIsNotNone(base)
         self.assertEqual(base["pe"], 0)
 
+    def test_sina_history_can_skip_known_unavailable_primary(self):
+        calls = []
+
+        class Frame:
+            pass
+
+        class Ak:
+            @staticmethod
+            def stock_zh_a_hist(**_kwargs):
+                calls.append("eastmoney")
+                raise AssertionError("known unavailable provider should be skipped")
+
+            @staticmethod
+            def stock_zh_a_daily(**kwargs):
+                calls.append(kwargs["symbol"])
+                return Frame()
+
+        frame, provider = MODULE.history_frame(Ak(), "600519", "20260101", "20260814", prefer_sina=True)
+        self.assertIsInstance(frame, Frame)
+        self.assertEqual(calls, ["sh600519"])
+        self.assertIn("新浪", provider)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -184,14 +184,16 @@ def spot_market(ak: Any, attempts: int = 3) -> tuple[Any, str]:
         return fetch_with_retry(ak.stock_zh_a_spot, attempts=attempts), "新浪财经全市场行情（备用）"
 
 
-def history_frame(ak: Any, code: str, start: str, end: str, attempts: int = 1) -> tuple[Any, str]:
-    try:
-        frame = fetch_with_retry(ak.stock_zh_a_hist, symbol=code, period="daily", start_date=start, end_date=end, adjust="qfq", attempts=attempts)
-        return frame, "东方财富历史行情"
-    except Exception:
-        symbol = f"sh{code}" if code.startswith("6") else f"sz{code}"
-        frame = fetch_with_retry(ak.stock_zh_a_daily, symbol=symbol, start_date=start, end_date=end, adjust="qfq", attempts=attempts)
-        return frame, "新浪财经历史行情（备用）"
+def history_frame(ak: Any, code: str, start: str, end: str, attempts: int = 1, prefer_sina: bool = False) -> tuple[Any, str]:
+    if not prefer_sina:
+        try:
+            frame = fetch_with_retry(ak.stock_zh_a_hist, symbol=code, period="daily", start_date=start, end_date=end, adjust="qfq", attempts=attempts)
+            return frame, "东方财富历史行情"
+        except Exception:
+            pass
+    symbol = f"sh{code}" if code.startswith("6") else f"sz{code}"
+    frame = fetch_with_retry(ak.stock_zh_a_daily, symbol=symbol, start_date=start, end_date=end, adjust="qfq", attempts=attempts)
+    return frame, "新浪财经历史行情（备用）"
 
 
 def build_base(spot_row: dict[str, Any], fin_row: dict[str, Any]) -> dict[str, Any] | None:
@@ -264,7 +266,13 @@ def generate_report() -> dict[str, Any]:
     start = (datetime.now(SHANGHAI_TZ) - timedelta(days=220)).strftime("%Y%m%d")
     for base in bases:
         try:
-            frame, _history_provider = history_frame(ak, base["code"], start, end)
+            frame, _history_provider = history_frame(
+                ak,
+                base["code"],
+                start,
+                end,
+                prefer_sina="备用" in spot_provider,
+            )
             tech = technical_metrics(frame.to_dict("records"))
             score, parts = score_pick(base, tech)
             metrics = {key: value for key, value in base.items() if key not in {"code", "name", "industry", "price", "amount"}}
