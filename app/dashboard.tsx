@@ -10,21 +10,37 @@ type EventItem = {
 type StockMetrics = {
   pe: number; pb: number; marketCapYi: number; turnoverRate: number; revenueGrowth: number;
   profitGrowth: number; roe: number; operatingCashFlowPerShare: number; grossMargin: number;
-  ma20: number; ma60: number; return20d: number; return60d: number; volumeRatio20d: number;
-  atr14Pct: number; maxDrawdown60d: number;
+  ma20: number | null; ma60: number | null; return20d: number | null; return60d: number | null;
+  volumeRatio20d: number | null; atr14Pct: number | null; maxDrawdown60d: number | null;
   fundamentalCoverage?: boolean;
 };
+type ShortTrend = {
+  direction: "up" | "down" | "range" | "transition" | "insufficient_data";
+  phase: "启动" | "延续" | "回踩" | "过度延伸" | "转弱" | "震荡" | "数据不足";
+  confidence: number; startDate: string | null; startPrice: number | null; ageTradingDays: number | null;
+  returnSinceStartPct: number | null; ema5: number | null; ema10: number | null; ema20: number | null;
+  ema5SlopePct: number | null; breakoutLevel: number | null; breakoutDate: string | null;
+  lastSwingHigh: number | null; lastSwingLow: number | null; structureSupport: number | null;
+  structureResistance: number | null; invalidationLevel: number | null; extensionAtr: number | null;
+  volumeConfirmation: "strong" | "normal" | "weak" | "unknown"; confirmationLagBars: number; levelMethod: string;
+};
+type MarketWind = {
+  status: "risk_on" | "neutral" | "risk_off" | "unknown"; score: number | null; asOf: string | null;
+  indices: Array<{ name: string; symbol: string; status: string; asOf: string | null; close?: number; return5d?: number; return10d?: number; return20d?: number; aboveEma20?: boolean; ema5AboveEma10?: boolean; volumeRatio20d?: number | null }>;
+};
 type StockPick = {
-  rank: number; code: string; name: string; industry: string; price: number; score: number;
+  rank: number; code: string; name: string; industry: string; price: number; priceAsOf?: string | null; score: number;
   scoreBreakdown: { fundamental: number; valuation: number; trend: number; risk: number };
-  metrics: StockMetrics; support: number; resistance: number; buyZoneLow: number; buyZoneHigh: number;
-  stopLoss: number; target: number; reason: string; fundamentals: string; sentiment: string;
-  trend: string; risk: string; invalidates: string;
+  trendDetail?: { mediumTerm: number; shortTerm: number }; shortTrend?: ShortTrend;
+  metrics: StockMetrics; support: number | null; resistance: number | null; buyZoneLow: number | null; buyZoneHigh: number | null;
+  stopLoss: number | null; target: number | null; levelMethod?: string; observationStatus?: "ready" | "wait";
+  observationReason?: string; reason: string; fundamentals: string; sentiment: string; trend: string; risk: string; invalidates: string;
 };
 type StockReport = {
+  schemaVersion?: number;
   isoYearWeek: string; market: string; status: "success" | "partial"; dataAsOf: string; generatedAt: string;
   dataProvider: string; summaryProvider: string; methodology: string; sentimentDefinition: string;
-  disclaimer: string; stocks: StockPick[];
+  disclaimer: string; marketWind?: MarketWind; stocks: StockPick[];
 };
 
 const APP_BOOT_TIME = Date.now();
@@ -44,10 +60,8 @@ const accounts = [
 const spending = [["居住", 38, "¥6,240"], ["餐饮", 24, "¥3,940"], ["交通", 15, "¥2,460"], ["学习", 13, "¥2,130"], ["其他", 10, "¥1,640"]] as const;
 
 const candidates = [
-  { name: "InvestSkill", repo: "https://github.com/yennanliu/InvestSkill", stats: "147 ★ · 36 Fork · 7 Issues", score: 91, fit: "美股", pros: "纯 Markdown、MIT、26 套框架、288+ 测试；无运行时与 API Key", cons: "默认聚焦美股，A 股数据需另接；结论质量依赖检索数据", status: "首选研究框架" },
-  { name: "finance-skills", repo: "https://github.com/himself65/finance-skills", stats: "2.5k ★ · 267 Fork · 0 Issues", score: 84, fit: "全球", pros: "维护活跃，估值/技术/情绪覆盖广，部分社交读取明确只读", cons: "包含交易策略主题且依赖 yfinance/外部服务，需逐项隔离安装", status: "保留候选" },
-  { name: "stockaskill", repo: "https://github.com/axjing/stockaskill", stats: "活跃项目 · 指标待 API 复核", score: 82, fit: "A股优先", pros: "AKShare、SQLite 缓存、多因子与 A/H/美市场，中文文档完整", cons: "Python 代码与网络请求面较大；组合构建能力须禁用写入/交易扩展", status: "A股数据候选" },
-  { name: "stock-analyzer-skill", repo: "https://github.com/AltenLi/stock-analyzer-skill", stats: "71 ★ · 14 Fork", score: 69, fit: "A/H/美", pros: "中文、三维分析、东方财富覆盖广", cons: "要求网站登录并模拟搜索；会话与限流风险较高，SKILL.md 过长", status: "暂不采用" },
+  { name: "sepa-strategy", repo: "https://github.com/himself65/finance-skills/tree/main/plugins/market-analysis/skills/sepa-strategy", stats: "不展示未实时验证的 Stars / Forks；本次仅审阅公开文档", score: 88, fit: "短期趋势结构", pros: "趋势阶段、HH/HL、LH/LL、突破回踩与量能确认的方法描述清晰", cons: "原仓库含更广泛策略主题；本项目只转写确定性方法，不安装、不执行", status: "结构方法参考" },
+  { name: "InvestSkill technical-analysis", repo: "https://github.com/yennanliu/InvestSkill/tree/main/plugins/us-stock-analysis/skills/technical-analysis", stats: "不展示未实时验证的 Stars / Forks；本次仅审阅公开文档", score: 84, fit: "多周期与数据验证", pros: "强调多周期交叉验证、数据完整性检查和方法透明", cons: "默认语境偏美股；不照搬其长周期均线参数或任何市场特定结论", status: "验证方法参考" },
 ];
 
 const stocks = [
@@ -83,6 +97,20 @@ function Source({ text = "内置模拟数据生成器", stale = false, updatedAt
 function reportTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
+
+function priceText(value: number | null | undefined) {
+  return value == null ? "未提供" : `¥${value.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;
+}
+
+const directionText: Record<ShortTrend["direction"], string> = {
+  up: "上涨", down: "下跌", range: "震荡区间", transition: "方向过渡", insufficient_data: "数据不足",
+};
+const windText: Record<MarketWind["status"], string> = {
+  risk_on: "风险偏好", neutral: "中性", risk_off: "风险规避", unknown: "市场数据未知",
+};
+const volumeText: Record<ShortTrend["volumeConfirmation"], string> = {
+  strong: "强确认（量比 ≥ 1.5）", normal: "一般确认（量比 1.2–1.5）", weak: "弱确认（量比 < 1.2）", unknown: "成交量未知",
+};
 
 function SyncHead({ title, eyebrow, action }: { title: string; eyebrow?: string; action?: () => void }) {
   return <div className="section-head"><div><div className="eyebrow">{eyebrow}</div><h2>{title}</h2></div>{action && <button className="button ghost" onClick={action}>↻ 手动刷新</button>}</div>;
@@ -213,7 +241,7 @@ function Stocks({ demo, report, loading, refresh }: { demo: boolean; report: Sto
     <div className="notice warning"><b>研究关注清单</b><span>“推荐”仅表示值得继续研究，不保证收益，不构成个性化投资建议；系统没有任何自动交易或证券账户权限。</span></div>
     <div className="tabs"><button className={tab==="report"?"active":""} onClick={()=>setTab("report")}>本周清单</button><button className={tab==="skills"?"active":""} onClick={()=>setTab("skills")}>Skill 评审</button><button className={tab==="history"?"active":""} onClick={()=>setTab("history")}>历史与复盘</button></div>
     {tab==="report" && (!demo ? <div className="card"><EmptyConnect kind="A 股行情、财务与新闻数据源"/><div className="source-plan"><b>生成一份可验证周报需要：</b><span>行情：交易所授权供应商或券商只读行情</span><span>财务：巨潮资讯 / 上交所 / 深交所公告</span><span>新闻：公司公告与可验证媒体原文</span></div></div> : <div className="stock-list"><div className="report-meta"><div><b>2026 · 第 33 周</b><span>默认市场：A 股 · 10 只模拟研究样本</span></div><div><span>数据状态</span><b className="simulation">模拟 / 非实时</b></div></div>{stocks.map((s,i)=><article className={`stock-card ${expanded===s[1]?"expanded":""}`} key={s[1]}><button className="stock-summary" onClick={()=>setExpanded(expanded===s[1]?"":s[1])}><span className="rank">{String(i+1).padStart(2,"0")}</span><div><b>{s[0]} <small>{s[1]}</small></b><span>{s[2]}</span></div><strong>{s[3]}<small>模拟价 · 延迟状态不适用</small></strong><em>{expanded===s[1]?"收起":"展开研究"}⌄</em></button>{expanded===s[1]&&<div className="stock-detail"><div className="thesis"><span>入选原因</span><b>{s[4]}</b><p>{s[5]}</p></div><div className="research-grid"><div><span>情绪面</span><p>{s[6]}</p></div><div><span>趋势 / 量价 / 波动</span><p>{s[7]}</p></div><div><span>关键价位</span><p>支撑 {s[8]} · 压力 {s[9]}</p></div><div><span>观察计划</span><p>入场区间 {s[10]} · 止损参考 {s[11]} · 止盈参考 {s[12]}</p></div></div><div className="logic"><b>逻辑与失效条件</b><p>仅在基本面趋势未恶化、量价确认且风险回报合理时继续观察。{s[13]}时，当前研究假设可能失效；后续跟踪季报、经营现金流、行业景气与成交量。</p></div><Source text="内置模拟数据生成器；名称与代码仅作界面样例"/></div>}</article>)}</div>)}
-    {tab==="skills" && <div><div className="audit-head"><div><b>GitHub 社区 Skill 综合评审</b><span>抓取 2026-08-13 · 公开仓库静态初筛 · 未安装、未执行任何第三方代码</span></div><div className="score-legend">综合：维护 20% · 安全 25% · 能力 25% · 数据 15% · 社区 15%</div></div><div className="candidate-grid">{candidates.map(c=><article className="card candidate" key={c.name}><div className="candidate-top"><div><a href={c.repo} target="_blank" rel="noreferrer">{c.name} ↗</a><span>{c.fit}</span></div><strong>{c.score}<small>/100</small></strong></div><div className="repo-stats">{c.stats}</div><p><b>优点</b>{c.pros}</p><p><b>限制</b>{c.cons}</p><footer><span>{c.status}</span><small>来源：GitHub 公开仓库 · 2026-08-13</small></footer></article>)}</div><section className="card decision"><span className="decision-mark">✓</span><div><b>最终选择：InvestSkill 作为方法论框架，stockaskill 仅作为待审计的 A 股数据候选</b><p>InvestSkill 没有运行时、网络请求或 API Key，权限面最小，且文档、验证门与三类分析最完整；但它不自带 A 股数据，因此正式接入前仍须把交易所公告与只读行情作为唯一事实来源。finance-skills 功能强，但包含交易策略主题，不能整体安装。</p></div></section></div>}
+    {tab==="skills" && <div><div className="audit-head"><div><b>GitHub 社区 Skill 方法评审</b><span>审阅 2026-08-14 · 公开文档静态检查 · 未安装、未执行任何第三方代码</span></div><div className="score-legend">方法适配：结构 30% · 数据验证 25% · 权限边界 25% · 文档透明 20%</div></div><div className="candidate-grid">{candidates.map(c=><article className="card candidate" key={c.name}><div className="candidate-top"><div><a href={c.repo} target="_blank" rel="noreferrer">{c.name} ↗</a><span>{c.fit}</span></div><strong>{c.score}<small>/100</small></strong></div><div className="repo-stats">{c.stats}</div><p><b>优点</b>{c.pros}</p><p><b>限制</b>{c.cons}</p><footer><span>{c.status}</span><small>来源：GitHub 公开仓库 · 2026-08-14</small></footer></article>)}</div><section className="card decision"><span className="decision-mark">✓</span><div><b>采用边界：sepa-strategy 参考结构，InvestSkill 参考验证</b><p>本项目只将公开文档中的趋势阶段、Pivot/BOS、回踩、量能确认、多周期核验和数据完整性原则转写为本地确定性算法；未克隆、安装或执行第三方代码，也未授予网络、Secrets、账户或交易权限。</p></div></section></div>}
     {tab==="history" && <div className="history"><article className="card"><div className="history-head"><span>第 32 周</span><div><b>上期复盘 · 模拟</b><small>2026-08-03—08-07</small></div><em>已归档</em></div><div className="review-stats"><div><b>6 / 10</b><span>方向符合观察</span></div><div><b>+1.8%</b><span>等权模拟表现</span></div><div><b>−3.4%</b><span>最大模拟回撤</span></div></div><p><b>偏差：</b>对周期品成交量持续性的判断偏乐观；对防御板块相对强度判断较准确。下期把“连续两日量能确认”加入入选门槛。</p><Source/></article><article className="card"><div className="history-head"><span>第 31 周</span><div><b>历史周报 · 模拟</b><small>2026-07-27—07-31</small></div><em>已归档</em></div><p>查看当期 10 股清单、逐条假设、失效条件与期末复盘。</p><button className="button ghost">查看归档</button><Source/></article></div>}
   </div>;
 }
@@ -224,13 +252,53 @@ function RealStocks({ report, loading, refresh, expanded, setExpanded }: { repor
     {loading ? <div className="card loading"><i/><b>正在从 D1 加载最新周报…</b></div> : !report ? <div className="card"><EmptyConnect kind="首份 A 股周报"/><div className="source-plan"><b>下一步</b><span>在 GitHub 的 Actions 页面手动运行 Weekly A-share research report</span><span>成功后刷新本页，报告会从 D1 自动读取</span></div></div> : <div className="stock-list">
       <div className="report-meta"><div><b>{report.isoYearWeek}</b><span>{report.market} · {report.stocks.length} 只研究样本 · 数据截至 {report.dataAsOf}</span></div><div><span>报告状态</span><b className={report.status === "success" ? "positive" : "simulation"}>{report.status === "success" ? "完整" : "部分数据"}</b></div></div>
       <div className="notice safe"><b>方法透明</b><span>{report.methodology} {report.sentimentDefinition}</span></div>
+      {report.marketWind && <MarketWindPanel wind={report.marketWind}/>}
       {report.stocks.map(item => <article className={`stock-card ${expanded===item.code?"expanded":""}`} key={item.code}>
-        <button className="stock-summary" onClick={()=>setExpanded(expanded===item.code?"":item.code)}><span className="rank">{String(item.rank).padStart(2,"0")}</span><div><b>{item.name} <small>{item.code}</small></b><span>{item.industry} · 综合 {item.score} 分</span></div><strong>¥{item.price.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}<small>数据日 {report.dataAsOf}</small></strong><em>{expanded===item.code?"收起":"展开研究"}⌄</em></button>
-        {expanded===item.code&&<div className="stock-detail"><div className="thesis"><span>入选原因</span><b>{item.reason}</b><p>{item.fundamentals}</p></div><div className="research-grid"><div><span>量价情绪代理</span><p>{item.sentiment}</p></div><div><span>趋势 / 量价 / 波动</span><p>{item.trend}</p></div><div><span>关键价位</span><p>支撑 {item.support} · 压力 {item.resistance}</p></div><div><span>观察计划</span><p>观察区间 {item.buyZoneLow}–{item.buyZoneHigh} · 风险参考 {item.stopLoss} · 目标参考 {item.target}</p></div></div><div className="logic"><b>风险与失效条件</b><p>{item.risk} 当{item.invalidates}时，当前研究假设可能失效。</p></div><div className="score-legend">评分：基本面 {item.scoreBreakdown.fundamental}/30 · 估值 {item.scoreBreakdown.valuation}/15 · 趋势 {item.scoreBreakdown.trend}/35 · 风险 {item.scoreBreakdown.risk}/20</div><Source text={`${report.dataProvider}；${report.summaryProvider}`} updatedAt={reportTime(report.generatedAt)}/></div>}
+        <button className="stock-summary" onClick={()=>setExpanded(expanded===item.code?"":item.code)}><span className="rank">{String(item.rank).padStart(2,"0")}</span><div><b>{item.name} <small>{item.code}</small></b><span>{item.industry} · 综合 {item.score} 分</span></div><strong>¥{item.price.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}<small>收盘日 {item.priceAsOf || report.dataAsOf} · 日线非实时</small></strong><em>{expanded===item.code?"收起":"展开研究"}⌄</em></button>
+        {expanded===item.code&&<div className="stock-detail">
+          <div className="thesis"><span>入选原因</span><b>{item.reason}</b><p>{item.fundamentals}</p></div>
+          <div className="research-grid"><div><span>量价情绪代理</span><p>{item.sentiment}</p></div><div><span>趋势 / 量价 / 波动</span><p>{item.trend}</p></div></div>
+          {item.shortTrend ? <ShortTrendDetail item={item}/> : <LegacyTrendDetail item={item}/>}
+          <div className="logic"><b>风险与失效条件</b><p>{item.risk} 当{item.invalidates}时，当前研究假设可能失效。</p></div>
+          <div className="score-legend">评分：基本面 {item.scoreBreakdown.fundamental}/30 · 估值 {item.scoreBreakdown.valuation}/15 · 趋势 {item.scoreBreakdown.trend}/35{item.trendDetail ? `（中期 ${item.trendDetail.mediumTerm} + 本轮短期 ${item.trendDetail.shortTerm}）` : ""} · 风险 {item.scoreBreakdown.risk}/20</div>
+          <Source text={`${report.dataProvider}；${report.summaryProvider}`} updatedAt={reportTime(report.generatedAt)}/>
+        </div>}
       </article>)}
       <div className="notice warning"><b>风险提示</b><span>{report.disclaimer}</span></div>
     </div>}
   </div>;
+}
+
+function MarketWindPanel({ wind }: { wind: MarketWind }) {
+  return <section className={`card market-wind wind-${wind.status}`}>
+    <div className="wind-heading"><div><span>A 股短期市场风向</span><b>{windText[wind.status]}</b></div><strong>{wind.score == null ? "评分不可用" : `${wind.score} / 100`}</strong></div>
+    <div className="wind-indices">{wind.indices.map(index => <div key={index.symbol}><b>{index.name}</b><span>{index.status !== "ok" ? "数据不可用" : `${index.return5d?.toFixed(1)}% / ${index.return10d?.toFixed(1)}% / ${index.return20d?.toFixed(1)}%（5/10/20日）`}</span><small>{index.status === "ok" ? `${index.aboveEma20 ? "高于" : "低于"} EMA20 · EMA5 ${index.ema5AboveEma10 ? "高于" : "不高于"} EMA10 · 量比 ${index.volumeRatio20d?.toFixed(2) ?? "未知"}` : "该指数失败不会阻断周报"}</small></div>)}</div>
+    <Source text="AKShare 腾讯指数日线（只读）" updatedAt={wind.asOf || "数据时间未知"}/>
+  </section>;
+}
+
+function ShortTrendDetail({ item }: { item: StockPick }) {
+  const trend = item.shortTrend as ShortTrend;
+  const trendClass = trend.direction === "up" ? "positive" : trend.direction === "down" || trend.phase === "转弱" ? "negative" : "neutral";
+  const observationReady = item.observationStatus === "ready" && item.buyZoneLow != null && item.buyZoneHigh != null;
+  return <section className="trend-panel">
+    <div className="trend-head"><div><span>本轮确认型短期结构</span><b className={trendClass}>{directionText[trend.direction]} · {trend.phase}</b></div><strong>置信度 {trend.confidence}/100</strong></div>
+    <div className="trend-grid">
+      <div><span>趋势启动</span><b>{trend.startDate ? `${trend.startDate} · ${priceText(trend.startPrice)}` : "尚无确认启动点"}</b><small>{trend.ageTradingDays == null ? "持续交易日不可用" : `持续 ${trend.ageTradingDays} 个交易日 · 至今 ${trend.returnSinceStartPct?.toFixed(2) ?? "—"}%`}</small></div>
+      <div><span>结构突破 BOS</span><b>{trend.breakoutDate ? `${trend.breakoutDate} · ${priceText(trend.breakoutLevel)}` : "尚无确认突破"}</b><small>Pivot 需等待右侧 {trend.confirmationLagBars} 根日 K 完成</small></div>
+      <div><span>结构支撑</span><b>{priceText(trend.structureSupport)}</b><small>最近 Swing Low {priceText(trend.lastSwingLow)}</small></div>
+      <div><span>结构压力</span><b>{trend.structureResistance == null ? "暂无已确认结构压力" : priceText(trend.structureResistance)}</b><small>最近 Swing High {priceText(trend.lastSwingHigh)}</small></div>
+      <div><span>量能确认</span><b>{volumeText[trend.volumeConfirmation]}</b><small>成交量只调整可信度，不决定价格结构</small></div>
+      <div><span>趋势失效位</span><b>{priceText(trend.invalidationLevel)}</b><small>是否过度延伸：{trend.phase === "过度延伸" ? "是" : "否"}{trend.extensionAtr == null ? "" : ` · 延伸 ${trend.extensionAtr.toFixed(2)} ATR`}</small></div>
+      <div><span>EMA 结构</span><b>EMA5 {priceText(trend.ema5)} · EMA10 {priceText(trend.ema10)}</b><small>EMA20 {priceText(trend.ema20)} · EMA5 斜率 {trend.ema5SlopePct?.toFixed(2) ?? "—"}%</small></div>
+      <div><span>观察计划</span><b>{observationReady ? `${priceText(item.buyZoneLow)}–${priceText(item.buyZoneHigh)}` : "等待确认"}</b><small>{item.observationReason || "结构与风险收益条件尚未同时满足"}</small></div>
+    </div>
+    <div className="level-strip"><span>结构风险参考 {priceText(item.stopLoss)}</span><span>ATR目标参考 {priceText(item.target)}</span><span>{item.levelMethod || trend.levelMethod}</span></div>
+  </section>;
+}
+
+function LegacyTrendDetail({ item }: { item: StockPick }) {
+  return <section className="legacy-trend" data-schema="1"><div className="notice warning"><b>历史报告</b><span>这是 schemaVersion=1 报告，按原有字段兼容显示；重新生成后可查看确认型短期结构。</span></div><div className="research-grid"><div><span>关键价位</span><p>支撑 {priceText(item.support)} · 压力 {item.resistance == null ? "未提供" : priceText(item.resistance)}</p></div><div><span>观察计划</span><p>观察区间 {priceText(item.buyZoneLow)}–{priceText(item.buyZoneHigh)} · 风险参考 {priceText(item.stopLoss)} · 目标参考 {priceText(item.target)}</p></div></div></section>;
 }
 
 function EventRow({event,actions}:{event:EventItem;actions?:React.ReactNode}) { const overdue=!event.completed&&new Date(event.startsAt).getTime()<APP_BOOT_TIME; return <div className={`event-row ${overdue?"overdue":""} ${event.completed?"done":""}`}><span className={`priority p-${event.priority}`}/><div><b>{event.title}</b><small>{new Intl.DateTimeFormat("zh-CN",{timeZone:"Asia/Shanghai",month:"numeric",day:"numeric",hour:event.allDay?undefined:"2-digit",minute:event.allDay?undefined:"2-digit"}).format(new Date(event.startsAt))} · {event.category}{event.location?` · ${event.location}`:""}</small></div><em>{timeLabel(event.startsAt,event.completed)}</em>{actions}</div> }

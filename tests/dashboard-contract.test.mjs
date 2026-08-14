@@ -45,9 +45,27 @@ test("weekly A-share reports use authenticated server-side ingestion", async () 
 test("real stock mode reads persisted reports and has no trading path", async () => {
   const page = await read("app/dashboard.tsx");
   const generator = await read("scripts/generate_a_share_report.py");
+  const trend = await read("scripts/short_trend.py");
   assert.match(page, /api\/stock-reports\/latest/);
   assert.match(page, /量价情绪代理/);
+  assert.match(page, /暂无已确认结构压力/);
+  assert.match(page, /ATR目标参考/);
+  assert.match(page, /item\.shortTrend \?/);
+  assert.match(page, /schemaVersion=1 报告/);
+  assert.match(page, /未安装、未执行任何第三方代码/);
   assert.match(generator, /stock_zh_a_spot_em/);
   assert.match(generator, /stock_zh_a_hist/);
+  assert.match(generator, /stock_zh_index_daily_tx/);
+  assert.match(trend, /confirmationLagBars/);
+  assert.doesNotMatch(generator, /min\(lows\[-20:\]\)|max\(highs\[-60:\]\)/);
   assert.doesNotMatch(generator, /place_order|submit_order|cancel_order|trade_account/i);
+  assert.doesNotMatch(trend, /place_order|submit_order|cancel_order|trade_account/i);
+});
+
+test("schema v2 ingestion validates trend and wind while v1 remains supported", async () => {
+  const ingest = await read("app/api/admin/stock-reports/route.ts");
+  assert.match(ingest, /schemaVersion == null \? 1/);
+  assert.match(ingest, /validateShortTrend/);
+  assert.match(ingest, /validateMarketWind/);
+  assert.match(ingest, /schemaVersion 仅支持 1 或 2/);
 });
