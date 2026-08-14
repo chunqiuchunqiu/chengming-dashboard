@@ -117,7 +117,9 @@ def score_pick(base: dict[str, Any], tech: dict[str, float]) -> tuple[int, dict[
     rev, profit, roe = base["revenueGrowth"], base["profitGrowth"], base["roe"]
     fundamental = min(30, max(0, 8 + (6 if rev > 10 else 3 if rev > 0 else 0) + (8 if profit > 15 else 4 if profit > 0 else 0) + (8 if roe > 12 else 4 if roe > 6 else 0)))
     pe, pb = base["pe"], base["pb"]
-    valuation = min(15, max(0, (10 if 0 < pe <= 30 else 6 if pe <= 50 else 2) + (5 if 0 < pb <= 4 else 2)))
+    pe_score = 10 if 0 < pe <= 30 else 6 if 30 < pe <= 50 else 2 if pe > 0 else 0
+    pb_score = 5 if 0 < pb <= 4 else 2 if pb > 0 else 0
+    valuation = min(15, pe_score + pb_score)
     trend = min(35, max(0, 12 + (8 if tech["price"] > tech["ma20"] else 0) + (7 if tech["ma20"] > tech["ma60"] else 0) + (5 if tech["return20d"] > 0 else 0) + (3 if tech["volumeRatio20d"] >= 1 else 0)))
     risk = min(20, max(0, 20 - (5 if tech["atr14Pct"] > 4 else 2 if tech["atr14Pct"] > 2.5 else 0) - (6 if tech["maxDrawdown60d"] < -20 else 3 if tech["maxDrawdown60d"] < -12 else 0)))
     parts = {"fundamental": int(fundamental), "valuation": int(valuation), "trend": int(trend), "risk": int(risk)}
@@ -127,9 +129,13 @@ def score_pick(base: dict[str, Any], tech: dict[str, float]) -> tuple[int, dict[
 def deterministic_text(item: dict[str, Any]) -> dict[str, str]:
     metrics = item["metrics"]
     trend_word = "偏强" if metrics["return20d"] > 0 and item["price"] > metrics["ma20"] else "震荡观察"
+    if metrics.get("fundamentalCoverage"):
+        fundamentals = f"营收同比 {metrics['revenueGrowth']:.1f}%，净利润同比 {metrics['profitGrowth']:.1f}%，ROE {metrics['roe']:.1f}%；PE {metrics['pe']:.1f} 倍，PB {metrics['pb']:.1f} 倍。"
+    else:
+        fundamentals = "本次免费财务接口未返回可验证字段，基本面已降权；请在公司定期报告中复核营收、利润、ROE 与现金流。"
     return {
         "reason": f"综合评分 {item['score']}，基本面、估值与量价趋势处于候选池前列。",
-        "fundamentals": f"营收同比 {metrics['revenueGrowth']:.1f}%，净利润同比 {metrics['profitGrowth']:.1f}%，ROE {metrics['roe']:.1f}%；PE {metrics['pe']:.1f} 倍，PB {metrics['pb']:.1f} 倍。",
+        "fundamentals": fundamentals,
         "sentiment": f"量价情绪代理为{trend_word}：20日涨跌 {metrics['return20d']:.1f}%，近5日/20日均量比 {metrics['volumeRatio20d']:.2f}。未接入新闻或社交情绪。",
         "trend": f"现价 {item['price']:.2f}，MA20 {metrics['ma20']:.2f}，MA60 {metrics['ma60']:.2f}，ATR14/价格 {metrics['atr14Pct']:.1f}%。",
         "risk": f"60日最大回撤 {metrics['maxDrawdown60d']:.1f}%；止损位仅为波动管理参考，不是交易指令。",
@@ -156,7 +162,7 @@ def financial_rows(ak: Any, today: date) -> tuple[dict[str, dict[str, Any]], str
             if frame is not None and not frame.empty:
                 result = {}
                 for raw in frame.to_dict("records"):
-                    code = str(pick(raw, "股票代码", "代码", default="")).zfill(6)
+                    code = normalize_code(pick(raw, "股票代码", "代码", default=""))
                     if code:
                         result[code] = raw
                 return result, period
@@ -165,18 +171,47 @@ def financial_rows(ak: Any, today: date) -> tuple[dict[str, dict[str, Any]], str
     return {}, "unavailable"
 
 
+def normalize_code(value: Any) -> str:
+    match = re.search(r"(\d{6})$", str(value).strip())
+    return match.group(1) if match else ""
+
+
+def spot_market(ak: Any, attempts: int = 3) -> tuple[Any, str]:
+    try:
+        return fetch_with_retry(ak.stock_zh_a_spot_em, attempts=attempts), "东方财富全市场行情"
+    except Exception:
+        print("primary spot provider unavailable; switching to Sina fallback")
+        return fetch_with_retry(ak.stock_zh_a_spot, attempts=attempts), "新浪财经全市场行情（备用）"
+
+
+def history_frame(ak: Any, code: str, start: str, end: str, attempts: int = 1) -> tuple[Any, str]:
+    try:
+        frame = fetch_with_retry(ak.stock_zh_a_hist, symbol=code, period="daily", start_date=start, end_date=end, adjust="qfq", attempts=attempts)
+        return frame, "东方财富历史行情"
+    except Exception:
+        symbol = f"sh{code}" if code.startswith("6") else f"sz{code}"
+        frame = fetch_with_retry(ak.stock_zh_a_daily, symbol=symbol, start_date=start, end_date=end, adjust="qfq", attempts=attempts)
+        return frame, "新浪财经历史行情（备用）"
+
+
 def build_base(spot_row: dict[str, Any], fin_row: dict[str, Any]) -> dict[str, Any] | None:
-    code = str(pick(spot_row, "代码", default="")).zfill(6)
+    code = normalize_code(pick(spot_row, "代码", default=""))
     name = str(pick(spot_row, "名称", default="")).strip()
     if not re.fullmatch(r"[036]\d{5}", code) or any(flag in name.upper() for flag in ("ST", "退")):
         return None
     price = number(pick(spot_row, "最新价"))
-    pe = number(pick(spot_row, "市盈率-动态", "市盈率"), 999)
-    pb = number(pick(spot_row, "市净率"), 999)
+    pe = number(pick(spot_row, "市盈率-动态", "市盈率"))
+    pb = number(pick(spot_row, "市净率"))
+    eps = number(pick(fin_row, "每股收益"))
+    book_value = number(pick(fin_row, "每股净资产"))
+    if pe <= 0 and eps > 0:
+        pe = price / eps
+    if pb <= 0 and book_value > 0:
+        pb = price / book_value
     amount = number(pick(spot_row, "成交额"))
     market_cap = number(pick(spot_row, "总市值")) / 100_000_000
     turnover = number(pick(spot_row, "换手率"))
-    if price <= 0 or amount < 50_000_000 or market_cap < 50 or pe <= 0 or pe > 80 or pb <= 0 or pb > 12:
+    if price <= 0 or amount < 50_000_000 or (market_cap > 0 and market_cap < 50) or pe > 80 or pb > 12:
         return None
     industry = str(pick(fin_row, "所处行业", "行业", default="未分类"))[:30]
     return {
@@ -188,39 +223,48 @@ def build_base(spot_row: dict[str, Any], fin_row: dict[str, Any]) -> dict[str, A
         "roe": rounded(number(pick(fin_row, "净资产收益率"))),
         "operatingCashFlowPerShare": rounded(number(pick(fin_row, "每股经营现金流量", "每股经营现金流"))),
         "grossMargin": rounded(number(pick(fin_row, "销售毛利率", "毛利率"))),
+        "fundamentalCoverage": bool(fin_row),
         "amount": amount,
     }
 
 
 def prefilter_score(item: dict[str, Any]) -> float:
-    return item["revenueGrowth"] * 0.15 + item["profitGrowth"] * 0.2 + item["roe"] * 0.35 - item["pe"] * 0.08 - item["pb"] * 0.25 + math.log10(max(item["amount"], 1))
+    valuation_penalty = (item["pe"] * 0.08 if item["pe"] > 0 else 0) + (item["pb"] * 0.25 if item["pb"] > 0 else 0)
+    return item["revenueGrowth"] * 0.15 + item["profitGrowth"] * 0.2 + item["roe"] * 0.35 - valuation_penalty + math.log10(max(item["amount"], 1))
 
 
-def load_market() -> tuple[list[dict[str, Any]], str, str]:
-    import akshare as ak  # lazy import keeps pure unit tests dependency-free
+def load_market(ak: Any | None = None) -> tuple[list[dict[str, Any]], str, str, str]:
+    if ak is None:
+        import akshare as ak_module  # lazy import keeps pure unit tests dependency-free
+        ak = ak_module
 
     today = datetime.now(SHANGHAI_TZ).date()
-    spot = fetch_with_retry(ak.stock_zh_a_spot_em)
-    finances, period = financial_rows(ak, today)
+    spot, spot_provider = spot_market(ak)
+    if "备用" in spot_provider:
+        finances, period = {}, "unavailable"
+        print("financial endpoint skipped because the primary provider is unavailable")
+    else:
+        finances, period = financial_rows(ak, today)
     bases = []
     for row in spot.to_dict("records"):
-        base = build_base(row, finances.get(str(pick(row, "代码", default="")).zfill(6), {}))
+        code = normalize_code(pick(row, "代码", default=""))
+        base = build_base(row, finances.get(code, {}))
         if base:
             bases.append(base)
     bases.sort(key=prefilter_score, reverse=True)
-    return bases[:40], period, today.isoformat()
+    return bases[:40], period, today.isoformat(), spot_provider
 
 
 def generate_report() -> dict[str, Any]:
     import akshare as ak
 
-    bases, finance_period, data_as_of = load_market()
+    bases, finance_period, data_as_of, spot_provider = load_market(ak)
     evaluated = []
     end = datetime.now(SHANGHAI_TZ).strftime("%Y%m%d")
     start = (datetime.now(SHANGHAI_TZ) - timedelta(days=220)).strftime("%Y%m%d")
     for base in bases:
         try:
-            frame = fetch_with_retry(ak.stock_zh_a_hist, symbol=base["code"], period="daily", start_date=start, end_date=end, adjust="qfq", attempts=2)
+            frame, _history_provider = history_frame(ak, base["code"], start, end)
             tech = technical_metrics(frame.to_dict("records"))
             score, parts = score_pick(base, tech)
             metrics = {key: value for key, value in base.items() if key not in {"code", "name", "industry", "price", "amount"}}
@@ -229,7 +273,8 @@ def generate_report() -> dict[str, Any]:
                     "support": tech["support"], "resistance": tech["resistance"], "buyZoneLow": tech["buyZoneLow"], "buyZoneHigh": tech["buyZoneHigh"], "stopLoss": tech["stopLoss"], "target": tech["target"]}
             item.update(deterministic_text(item))
             evaluated.append(item)
-        except Exception:
+        except Exception as exc:
+            print(f"skip {base['code']}: {type(exc).__name__}")
             continue
     evaluated.sort(key=lambda item: item["score"], reverse=True)
     selected, sectors = [], Counter()
@@ -252,8 +297,8 @@ def generate_report() -> dict[str, Any]:
         item["rank"] = rank
     now = datetime.now(SHANGHAI_TZ)
     report = {
-        "schemaVersion": 1, "isoYearWeek": iso_week(now), "market": "A股", "status": "success" if len(selected) == 10 else "partial",
-        "dataAsOf": data_as_of, "generatedAt": now.isoformat(), "dataProvider": f"AKShare（东方财富公开数据接口；财报期 {finance_period}）",
+        "schemaVersion": 1, "isoYearWeek": iso_week(now), "market": "A股", "status": "success" if len(selected) == 10 and finance_period != "unavailable" else "partial",
+        "dataAsOf": data_as_of, "generatedAt": now.isoformat(), "dataProvider": f"AKShare（{spot_provider}；财报期 {finance_period}）",
         "summaryProvider": "规则引擎", "methodology": "先按流动性、规模、估值和财务质量筛选，再对候选计算均线、量能、ATR、回撤及关键价位；最多保留同一行业 2 只。",
         "sentimentDefinition": "情绪面仅使用涨跌幅与成交量构成的量价代理，不包含新闻、社交媒体或主观市场传闻。",
         "disclaimer": "仅供研究观察，不构成个性化投资建议或收益承诺；关键价位是历史统计参考，不是交易指令。系统没有下单、撤单或账户操作权限。",

@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -33,4 +33,11 @@ jobs:
           DASHBOARD_INGEST_URL: ${{ vars.DASHBOARD_INGEST_URL }}
           REPORT_INGEST_SECRET: ${{ secrets.REPORT_INGEST_SECRET }}
           SITES_BYPASS_TOKEN: ${{ secrets.SITES_BYPASS_TOKEN }}
-        run: python scripts/generate_a_share_report.py
+        shell: bash
+        run: |
+          for attempt in 1 2; do
+            python scripts/generate_a_share_report.py && exit 0
+            echo "data provider attempt ${attempt} failed"
+            sleep 30
+          done
+          exit 1

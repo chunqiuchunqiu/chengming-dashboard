@@ -12,6 +12,7 @@ type StockMetrics = {
   profitGrowth: number; roe: number; operatingCashFlowPerShare: number; grossMargin: number;
   ma20: number; ma60: number; return20d: number; return60d: number; volumeRatio20d: number;
   atr14Pct: number; maxDrawdown60d: number;
+  fundamentalCoverage?: boolean;
 };
 type StockPick = {
   rank: number; code: string; name: string; industry: string; price: number; score: number;

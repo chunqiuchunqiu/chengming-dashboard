@@ -32,6 +32,35 @@ class ReportMathTests(unittest.TestCase):
         self.assertIsNone(MODULE.build_base({**common, "代码": "600001", "名称": "ST示例"}, {}))
         self.assertIsNone(MODULE.build_base({**common, "代码": "830001", "名称": "北交示例"}, {}))
 
+    def test_normalizes_sina_prefixed_codes(self):
+        self.assertEqual(MODULE.normalize_code("sh600519"), "600519")
+        self.assertEqual(MODULE.normalize_code("sz000333"), "000333")
+
+    def test_sina_spot_fallback_allows_missing_valuation(self):
+        class Frame:
+            empty = False
+
+        class Ak:
+            @staticmethod
+            def stock_zh_a_spot_em():
+                raise ConnectionError("primary unavailable")
+
+            @staticmethod
+            def stock_zh_a_spot():
+                return Frame()
+
+        original_sleep = MODULE.time.sleep
+        MODULE.time.sleep = lambda _: None
+        try:
+            frame, provider = MODULE.spot_market(Ak(), attempts=1)
+        finally:
+            MODULE.time.sleep = original_sleep
+        self.assertIsInstance(frame, Frame)
+        self.assertIn("新浪", provider)
+        base = MODULE.build_base({"代码": "sh600001", "名称": "示例", "最新价": 12, "成交额": 100_000_000}, {})
+        self.assertIsNotNone(base)
+        self.assertEqual(base["pe"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
