@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const calendarEvents = sqliteTable("calendar_events", {
   id: text("id").primaryKey(),
@@ -15,3 +15,20 @@ export const calendarEvents = sqliteTable("calendar_events", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+export const stockReports = sqliteTable("stock_reports", {
+  id: text("id").primaryKey(),
+  isoYearWeek: text("iso_year_week").notNull(),
+  market: text("market").notNull().default("A股"),
+  status: text("status").notNull().default("success"),
+  dataAsOf: text("data_as_of").notNull(),
+  generatedAt: text("generated_at").notNull(),
+  dataProvider: text("data_provider").notNull(),
+  summaryProvider: text("summary_provider").notNull(),
+  reportJson: text("report_json").notNull(),
+  errorMessage: text("error_message").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("stock_reports_iso_year_week_unique").on(table.isoYearWeek),
+]);

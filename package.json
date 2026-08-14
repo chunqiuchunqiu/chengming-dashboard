@@ -9,7 +9,7 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "test": "node --test tests/dashboard-contract.test.mjs",
+    "test": "node --test tests/dashboard-contract.test.mjs && python -m unittest tests/test_a_share_report.py",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

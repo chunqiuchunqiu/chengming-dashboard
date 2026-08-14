@@ -1,5 +1,5 @@
 declare module "cloudflare:workers" {
-  export const env: { DB?: D1Database; ASSETS?: Fetcher };
+  export const env: { DB?: D1Database; ASSETS?: Fetcher; REPORT_INGEST_SECRET?: string };
 }
 
 interface Fetcher {

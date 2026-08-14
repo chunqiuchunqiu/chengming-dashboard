@@ -27,3 +27,27 @@ test("calendar persistence is user-scoped", async () => {
   assert.match(route, /eq\(calendarEvents\.userId, userId\(request\)\)/);
   assert.match(route, /title.*slice\(0, 120\)/s);
 });
+
+test("weekly A-share reports use authenticated server-side ingestion", async () => {
+  const workflow = await read(".github/workflows/weekly-a-share-report.yml");
+  const ingest = await read("app/api/admin/stock-reports/route.ts");
+  const latest = await read("app/api/stock-reports/latest/route.ts");
+  assert.match(workflow, /schedule:/);
+  assert.match(workflow, /secrets\.DEEPSEEK_API_KEY/);
+  assert.match(workflow, /secrets\.REPORT_INGEST_SECRET/);
+  assert.match(workflow, /secrets\.SITES_BYPASS_TOKEN/);
+  assert.match(ingest, /authorization/);
+  assert.match(ingest, /REPORT_INGEST_SECRET/);
+  assert.match(ingest, /onConflictDoUpdate/);
+  assert.match(latest, /status, "success"/);
+});
+
+test("real stock mode reads persisted reports and has no trading path", async () => {
+  const page = await read("app/dashboard.tsx");
+  const generator = await read("scripts/generate_a_share_report.py");
+  assert.match(page, /api\/stock-reports\/latest/);
+  assert.match(page, /量价情绪代理/);
+  assert.match(generator, /stock_zh_a_spot_em/);
+  assert.match(generator, /stock_zh_a_hist/);
+  assert.doesNotMatch(generator, /place_order|submit_order|cancel_order|trade_account/i);
+});

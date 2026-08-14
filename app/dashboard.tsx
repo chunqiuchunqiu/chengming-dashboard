@@ -7,6 +7,26 @@ type EventItem = {
   id: string; title: string; startsAt: string; allDay: boolean; category: string;
   priority: "高" | "中" | "低"; location: string; notes: string; reminderMinutes: number; completed: boolean;
 };
+type StockMetrics = {
+  pe: number; pb: number; marketCapYi: number; turnoverRate: number; revenueGrowth: number;
+  profitGrowth: number; roe: number; operatingCashFlowPerShare: number; grossMargin: number;
+  ma20: number; ma60: number; return20d: number; return60d: number; volumeRatio20d: number;
+  atr14Pct: number; maxDrawdown60d: number;
+};
+type StockPick = {
+  rank: number; code: string; name: string; industry: string; price: number; score: number;
+  scoreBreakdown: { fundamental: number; valuation: number; trend: number; risk: number };
+  metrics: StockMetrics; support: number; resistance: number; buyZoneLow: number; buyZoneHigh: number;
+  stopLoss: number; target: number; reason: string; fundamentals: string; sentiment: string;
+  trend: string; risk: string; invalidates: string;
+};
+type StockReport = {
+  isoYearWeek: string; market: string; status: "success" | "partial"; dataAsOf: string; generatedAt: string;
+  dataProvider: string; summaryProvider: string; methodology: string; sentimentDefinition: string;
+  disclaimer: string; stocks: StockPick[];
+};
+
+const APP_BOOT_TIME = Date.now();
 
 const nav: { id: View; label: string; mark: string }[] = [
   { id: "home", label: "首页", mark: "⌂" }, { id: "funds", label: "资金", mark: "¥" },
@@ -46,7 +66,7 @@ const blankEvent = (): EventItem => ({ id: "", title: "", startsAt: new Date(Dat
 
 function timeLabel(iso: string, completed: boolean) {
   if (completed) return "已完成";
-  const diff = new Date(iso).getTime() - Date.now();
+  const diff = new Date(iso).getTime() - APP_BOOT_TIME;
   const abs = Math.abs(diff);
   const prefix = diff < 0 ? "已逾期 " : "还有 ";
   const days = Math.floor(abs / 86400000);
@@ -55,8 +75,12 @@ function timeLabel(iso: string, completed: boolean) {
   return prefix + (days ? `${days}天${hours ? ` ${hours}小时` : ""}` : `${hours}小时${mins}分钟`);
 }
 
-function Source({ text = "内置模拟数据生成器", stale = false }: { text?: string; stale?: boolean }) {
-  return <div className={`source ${stale ? "stale" : ""}`}><span>{stale ? "!" : "i"}</span> 来源：{text} · 最后更新 2026-08-13 09:30 CST</div>;
+function Source({ text = "内置模拟数据生成器", stale = false, updatedAt = "2026-08-13 09:30 CST" }: { text?: string; stale?: boolean; updatedAt?: string }) {
+  return <div className={`source ${stale ? "stale" : ""}`}><span>{stale ? "!" : "i"}</span> 来源：{text} · 最后更新 {updatedAt}</div>;
+}
+
+function reportTime(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
 
 function SyncHead({ title, eyebrow, action }: { title: string; eyebrow?: string; action?: () => void }) {
@@ -76,6 +100,8 @@ export function Dashboard() {
   const [calendarMode, setCalendarMode] = useState<"today" | "month">("today");
   const [toast, setToast] = useState("");
   const [loadingEvents, setLoadingEvents] = useState(true);
+  const [stockReport, setStockReport] = useState<StockReport | null>(null);
+  const [loadingReport, setLoadingReport] = useState(true);
 
   const loadEvents = async () => {
     setLoadingEvents(true);
@@ -86,9 +112,37 @@ export function Dashboard() {
     } catch { setToast("接口错误：日历暂未同步，请稍后重试"); }
     finally { setLoadingEvents(false); }
   };
-  useEffect(() => { loadEvents(); }, []);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/events").then(res => {
+      if (!res.ok) throw new Error("日历服务暂不可用");
+      return res.json();
+    }).then(data => { if (active) setEvents(data.events ?? []); })
+      .catch(() => { if (active) setToast("接口错误：日历暂未同步，请稍后重试"); })
+      .finally(() => { if (active) setLoadingEvents(false); });
+    return () => { active = false; };
+  }, []);
+  const loadReport = async () => {
+    setLoadingReport(true);
+    try {
+      const res = await fetch("/api/stock-reports/latest");
+      if (!res.ok) throw new Error("周报服务暂不可用");
+      const data = await res.json(); setStockReport(data.report ?? null);
+    } catch { setStockReport(null); }
+    finally { setLoadingReport(false); }
+  };
+  useEffect(() => {
+    let active = true;
+    fetch("/api/stock-reports/latest").then(res => {
+      if (!res.ok) throw new Error("周报服务暂不可用");
+      return res.json();
+    }).then(data => { if (active) setStockReport(data.report ?? null); })
+      .catch(() => { if (active) setStockReport(null); })
+      .finally(() => { if (active) setLoadingReport(false); });
+    return () => { active = false; };
+  }, []);
 
-  const upcoming = useMemo(() => events.filter(e => new Date(e.startsAt).getTime() < Date.now() + 8 * 86400000).sort((a,b) => +new Date(a.startsAt) - +new Date(b.startsAt)), [events]);
+  const upcoming = useMemo(() => events.filter(e => new Date(e.startsAt).getTime() < APP_BOOT_TIME + 8 * 86400000).sort((a,b) => +new Date(a.startsAt) - +new Date(b.startsAt)), [events]);
   const saveEvent = async (e: FormEvent) => {
     e.preventDefault();
     const item = { ...eventDraft, id: eventDraft.id || crypto.randomUUID() };
@@ -110,13 +164,13 @@ export function Dashboard() {
       <div className="readonly"><span>✓</span><div><b>只读安全模式</b><small>资金操作已永久禁用</small></div></div>
     </aside>
     <main>
-      {!demo && <div className="notice warning"><b>真实数据模式 · 待接入</b><span>未检测到已授权数据源。页面不会编造任何账户、行情或新闻数据。</span></div>}
+      {!demo && <div className={`notice ${stockReport ? "safe" : "warning"}`}><b>真实数据模式 · {stockReport ? "A 股周报已接入" : "等待首份周报"}</b><span>{stockReport ? `数据截至 ${stockReport.dataAsOf}，资金账户仍未连接。` : "GitHub 周任务运行并写入首份报告后会自动显示；页面不会编造行情或新闻数据。"}</span></div>}
       {demo && <div className="notice demo"><b>模拟数据</b><span>用于界面演示，不代表任何真实账户、实时行情或投资结论。</span><button onClick={() => setDemo(false)}>退出演示</button></div>}
-      {view === "home" && <Home demo={demo} events={upcoming} openCalendar={() => setView("calendar")} openStocks={() => setView("stocks")} openFunds={() => setView("funds")} />}
+      {view === "home" && <Home demo={demo} events={upcoming} report={stockReport} loadingReport={loadingReport} openCalendar={() => setView("calendar")} openStocks={() => setView("stocks")} openFunds={() => setView("funds")} />}
       {view === "funds" && <Funds demo={demo} />}
-      {view === "stocks" && <Stocks demo={demo} />}
+      {view === "stocks" && <Stocks demo={demo} report={stockReport} loading={loadingReport} refresh={loadReport} />}
       {view === "calendar" && <CalendarPage events={events} upcoming={upcoming} loading={loadingEvents} mode={calendarMode} setMode={setCalendarMode} openEdit={openEdit} update={updateEvent} remove={removeEvent} refresh={loadEvents} />}
-      {view === "settings" && <Settings demo={demo} setDemo={setDemo} />}
+      {view === "settings" && <Settings demo={demo} setDemo={setDemo} stockConnected={Boolean(stockReport)} />}
     </main>
     <nav className="mobile-nav">{nav.map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><span>{item.mark}</span>{item.label}</button>)}</nav>
     {modal && <EventModal item={eventDraft} setItem={setEventDraft} close={() => setModal(false)} save={saveEvent} />}
@@ -124,12 +178,12 @@ export function Dashboard() {
   </div>;
 }
 
-function Home({ demo, events, openCalendar, openStocks, openFunds }: { demo: boolean; events: EventItem[]; openCalendar: () => void; openStocks: () => void; openFunds: () => void }) {
+function Home({ demo, events, report, loadingReport, openCalendar, openStocks, openFunds }: { demo: boolean; events: EventItem[]; report: StockReport | null; loadingReport: boolean; openCalendar: () => void; openStocks: () => void; openFunds: () => void }) {
   return <div className="page">
     <div className="welcome"><div><div className="eyebrow">2026年8月13日 · 星期四</div><h1>早上好，保持清醒的判断。</h1><p>你的资产、研究与日程，都在一处有据可查。</p></div><button className="button primary" onClick={() => location.reload()}>↻ 同步全部</button></div>
     <div className="home-grid">
       <section className="card asset-card"><SyncHead title="资产概览" eyebrow="FINANCIAL POSITION" action={openFunds} />{demo ? <><div className="asset-main"><div><small>净资产</small><strong>¥343,930</strong><em>↑ 2.4% 较上月</em></div><div className="ring"><b>72%</b><small>金融资产</small></div></div><div className="mini-stats"><div><span>总资产</span><b>¥376,530</b></div><div><span>总负债</span><b className="negative">¥32,600</b></div><div><span>本月净流入</span><b className="positive">+¥8,420</b></div></div><Source /></> : <EmptyConnect kind="资金账户" />}</section>
-      <section className="card research-card"><SyncHead title="每周股票研究" eyebrow="WEEKLY RESEARCH" action={openStocks} />{demo ? <><div className="report-title"><span>第 33 周</span><div><b>A股重点关注清单</b><small>10 只 · 研究观察，不构成投资建议</small></div><strong>已生成</strong></div><div className="ticker-row">{stocks.slice(0,4).map((s,i) => <div key={s[1]}><span>{i+1}</span><b>{s[0]}</b><small>{s[1]} · {s[2]}</small><em className={i===2 ? "neutral" : "positive"}>{i===2 ? "观察" : "重点"}</em></div>)}</div><button className="text-link" onClick={openStocks}>查看全部 10 只及研究依据 →</button><Source /></> : <EmptyConnect kind="行情与研究数据源" />}</section>
+      <section className="card research-card"><SyncHead title="每周股票研究" eyebrow="WEEKLY RESEARCH" action={openStocks} />{demo ? <><div className="report-title"><span>第 33 周</span><div><b>A股重点关注清单</b><small>10 只 · 研究观察，不构成投资建议</small></div><strong>已生成</strong></div><div className="ticker-row">{stocks.slice(0,4).map((s,i) => <div key={s[1]}><span>{i+1}</span><b>{s[0]}</b><small>{s[1]} · {s[2]}</small><em className={i===2 ? "neutral" : "positive"}>{i===2 ? "观察" : "重点"}</em></div>)}</div><button className="text-link" onClick={openStocks}>查看全部 10 只及研究依据 →</button><Source /></> : loadingReport ? <div className="loading"><i/><b>正在加载 A 股周报…</b></div> : report ? <><div className="report-title"><span>{report.isoYearWeek}</span><div><b>A 股重点研究清单</b><small>{report.stocks.length} 只 · 数据截至 {report.dataAsOf}</small></div><strong>{report.status === "success" ? "已生成" : "部分数据"}</strong></div><div className="ticker-row">{report.stocks.slice(0,4).map(item => <div key={item.code}><span>{item.rank}</span><b>{item.name}</b><small>{item.code} · {item.industry}</small><em className="positive">{item.score} 分</em></div>)}</div><button className="text-link" onClick={openStocks}>查看全部及研究依据 →</button><Source text={report.dataProvider} updatedAt={reportTime(report.generatedAt)} /></> : <EmptyConnect kind="A 股周报数据源" />}</section>
       <section className="card today-card"><SyncHead title="今日日程" eyebrow="TODAY" action={openCalendar} />{events.length ? <div className="event-list">{events.slice(0,4).map(e => <EventRow key={e.id} event={e} />)}</div> : <div className="empty compact"><span className="empty-icon">✓</span><div><strong>近期没有日程</strong><p>添加一条日程，倒计时会在这里出现。</p></div></div>}<button className="text-link" onClick={openCalendar}>打开日历与未来 7 天 →</button><Source text="个人日程数据库" /></section>
     </div>
     <section className="card pulse"><div><span className="pulse-mark">!</span><div><b>今日风险雷达</b><p>{demo ? "检测到 1 笔模拟大额支出；2 只模拟关注股接近压力位；无逾期日程。" : "数据源尚未连接，无法执行风险扫描。"}</p></div></div><span>规则扫描 · 非投资建议</span></section>
@@ -150,9 +204,10 @@ function Funds({ demo }: { demo: boolean }) {
 
 function Metric({label,value,delta,negative=false}:{label:string;value:string;delta:string;negative?:boolean}) { return <div className="card metric"><span>{label}</span><strong className={negative ? "negative" : ""}>{value}</strong><small className={negative ? "negative" : "positive"}>{delta}</small><Source/></div> }
 
-function Stocks({ demo }: { demo: boolean }) {
+function Stocks({ demo, report, loading, refresh }: { demo: boolean; report: StockReport | null; loading: boolean; refresh: () => void }) {
   const [tab,setTab]=useState<"report"|"skills"|"history">("report");
   const [expanded,setExpanded]=useState<string>("600519");
+  if (!demo) return <RealStocks report={report} loading={loading} refresh={refresh} expanded={expanded} setExpanded={setExpanded}/>;
   return <div className="page"><SyncHead title="每周股票研究" eyebrow="RESEARCH ONLY · 默认 A 股" action={() => location.reload()} />
     <div className="notice warning"><b>研究关注清单</b><span>“推荐”仅表示值得继续研究，不保证收益，不构成个性化投资建议；系统没有任何自动交易或证券账户权限。</span></div>
     <div className="tabs"><button className={tab==="report"?"active":""} onClick={()=>setTab("report")}>本周清单</button><button className={tab==="skills"?"active":""} onClick={()=>setTab("skills")}>Skill 评审</button><button className={tab==="history"?"active":""} onClick={()=>setTab("history")}>历史与复盘</button></div>
@@ -162,7 +217,22 @@ function Stocks({ demo }: { demo: boolean }) {
   </div>;
 }
 
-function EventRow({event,actions}:{event:EventItem;actions?:React.ReactNode}) { const overdue=!event.completed&&new Date(event.startsAt).getTime()<Date.now(); return <div className={`event-row ${overdue?"overdue":""} ${event.completed?"done":""}`}><span className={`priority p-${event.priority}`}/><div><b>{event.title}</b><small>{new Intl.DateTimeFormat("zh-CN",{timeZone:"Asia/Shanghai",month:"numeric",day:"numeric",hour:event.allDay?undefined:"2-digit",minute:event.allDay?undefined:"2-digit"}).format(new Date(event.startsAt))} · {event.category}{event.location?` · ${event.location}`:""}</small></div><em>{timeLabel(event.startsAt,event.completed)}</em>{actions}</div> }
+function RealStocks({ report, loading, refresh, expanded, setExpanded }: { report: StockReport | null; loading: boolean; refresh: () => void; expanded: string; setExpanded: (value: string) => void }) {
+  return <div className="page"><SyncHead title="每周股票研究" eyebrow="AKSHARE · DEEPSEEK 可选摘要" action={refresh}/>
+    <div className="notice warning"><b>研究关注清单</b><span>仅供继续研究，不保证收益，不构成个性化投资建议；系统没有任何自动交易或证券账户权限。</span></div>
+    {loading ? <div className="card loading"><i/><b>正在从 D1 加载最新周报…</b></div> : !report ? <div className="card"><EmptyConnect kind="首份 A 股周报"/><div className="source-plan"><b>下一步</b><span>在 GitHub 的 Actions 页面手动运行 Weekly A-share research report</span><span>成功后刷新本页，报告会从 D1 自动读取</span></div></div> : <div className="stock-list">
+      <div className="report-meta"><div><b>{report.isoYearWeek}</b><span>{report.market} · {report.stocks.length} 只研究样本 · 数据截至 {report.dataAsOf}</span></div><div><span>报告状态</span><b className={report.status === "success" ? "positive" : "simulation"}>{report.status === "success" ? "完整" : "部分数据"}</b></div></div>
+      <div className="notice safe"><b>方法透明</b><span>{report.methodology} {report.sentimentDefinition}</span></div>
+      {report.stocks.map(item => <article className={`stock-card ${expanded===item.code?"expanded":""}`} key={item.code}>
+        <button className="stock-summary" onClick={()=>setExpanded(expanded===item.code?"":item.code)}><span className="rank">{String(item.rank).padStart(2,"0")}</span><div><b>{item.name} <small>{item.code}</small></b><span>{item.industry} · 综合 {item.score} 分</span></div><strong>¥{item.price.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}<small>数据日 {report.dataAsOf}</small></strong><em>{expanded===item.code?"收起":"展开研究"}⌄</em></button>
+        {expanded===item.code&&<div className="stock-detail"><div className="thesis"><span>入选原因</span><b>{item.reason}</b><p>{item.fundamentals}</p></div><div className="research-grid"><div><span>量价情绪代理</span><p>{item.sentiment}</p></div><div><span>趋势 / 量价 / 波动</span><p>{item.trend}</p></div><div><span>关键价位</span><p>支撑 {item.support} · 压力 {item.resistance}</p></div><div><span>观察计划</span><p>观察区间 {item.buyZoneLow}–{item.buyZoneHigh} · 风险参考 {item.stopLoss} · 目标参考 {item.target}</p></div></div><div className="logic"><b>风险与失效条件</b><p>{item.risk} 当{item.invalidates}时，当前研究假设可能失效。</p></div><div className="score-legend">评分：基本面 {item.scoreBreakdown.fundamental}/30 · 估值 {item.scoreBreakdown.valuation}/15 · 趋势 {item.scoreBreakdown.trend}/35 · 风险 {item.scoreBreakdown.risk}/20</div><Source text={`${report.dataProvider}；${report.summaryProvider}`} updatedAt={reportTime(report.generatedAt)}/></div>}
+      </article>)}
+      <div className="notice warning"><b>风险提示</b><span>{report.disclaimer}</span></div>
+    </div>}
+  </div>;
+}
+
+function EventRow({event,actions}:{event:EventItem;actions?:React.ReactNode}) { const overdue=!event.completed&&new Date(event.startsAt).getTime()<APP_BOOT_TIME; return <div className={`event-row ${overdue?"overdue":""} ${event.completed?"done":""}`}><span className={`priority p-${event.priority}`}/><div><b>{event.title}</b><small>{new Intl.DateTimeFormat("zh-CN",{timeZone:"Asia/Shanghai",month:"numeric",day:"numeric",hour:event.allDay?undefined:"2-digit",minute:event.allDay?undefined:"2-digit"}).format(new Date(event.startsAt))} · {event.category}{event.location?` · ${event.location}`:""}</small></div><em>{timeLabel(event.startsAt,event.completed)}</em>{actions}</div> }
 
 function CalendarPage({events,upcoming,loading,mode,setMode,openEdit,update,remove,refresh}:{events:EventItem[];upcoming:EventItem[];loading:boolean;mode:"today"|"month";setMode:(v:"today"|"month")=>void;openEdit:(e?:EventItem)=>void;update:(e:EventItem)=>void;remove:(id:string)=>void;refresh:()=>void}) {
   const days=Array.from({length:35},(_,i)=>{const d=new Date(2026,7,i-4);return d});
@@ -176,5 +246,5 @@ function ManageEvent({e,openEdit,update,remove}:{e:EventItem;openEdit:(e:EventIt
 
 function EventModal({item,setItem,close,save}:{item:EventItem;setItem:(e:EventItem)=>void;close:()=>void;save:(e:FormEvent)=>void}) { return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)close()}}><form className="modal" onSubmit={save}><div className="modal-head"><div><div className="eyebrow">CALENDAR ITEM</div><h2>{item.id?"编辑日程":"新建日程"}</h2></div><button type="button" onClick={close}>×</button></div><label>标题<input required value={item.title} onChange={e=>setItem({...item,title:e.target.value})} placeholder="例如：季度复盘"/></label><div className="form-grid"><label>日期与时间<input required type="datetime-local" value={item.startsAt} onChange={e=>setItem({...item,startsAt:e.target.value})}/></label><label>分类<select value={item.category} onChange={e=>setItem({...item,category:e.target.value})}><option>个人</option><option>工作</option><option>财务</option><option>健康</option><option>学习</option></select></label><label>优先级<select value={item.priority} onChange={e=>setItem({...item,priority:e.target.value as EventItem["priority"]})}><option>高</option><option>中</option><option>低</option></select></label><label>提醒<select value={item.reminderMinutes} onChange={e=>setItem({...item,reminderMinutes:+e.target.value})}><option value="0">不提醒</option><option value="10">提前 10 分钟</option><option value="30">提前 30 分钟</option><option value="1440">提前 1 天</option></select></label></div><label>地点<input value={item.location} onChange={e=>setItem({...item,location:e.target.value})} placeholder="可选"/></label><label>备注<textarea value={item.notes} onChange={e=>setItem({...item,notes:e.target.value})} placeholder="补充背景或准备事项"/></label><div className="check-row"><label><input type="checkbox" checked={item.allDay} onChange={e=>setItem({...item,allDay:e.target.checked})}/> 全天事项</label><label><input type="checkbox" checked={item.completed} onChange={e=>setItem({...item,completed:e.target.checked})}/> 已完成</label></div><div className="modal-actions"><button type="button" className="button ghost" onClick={close}>取消</button><button className="button primary">保存日程</button></div></form></div> }
 
-function Settings({demo,setDemo}:{demo:boolean;setDemo:(v:boolean)=>void}) { return <div className="page"><SyncHead title="设置与数据治理" eyebrow="PRIVACY & CONNECTIONS"/><div className="settings-grid"><section className="card"><SyncHead title="数据模式"/><label className="setting-row"><div><b>模拟数据模式</b><span>所有资金与股票数值均为显著标注的界面样例</span></div><input type="checkbox" checked={demo} onChange={e=>setDemo(e.target.checked)}/></label><label className="setting-row"><div><b>默认股票市场</b><span>每周研究生成前可修改</span></div><select><option>A 股</option><option>港股</option><option>美股</option><option>全球主要市场</option></select></label><div className="setting-row"><div><b>默认时区</b><span>日程、抓取时间与同步时间统一</span></div><strong>Asia/Shanghai</strong></div></section><section className="card"><SyncHead title="数据连接"/><Connection name="资金账户" detail="银行 / 券商 / 支付 · 仅余额与流水查询"/><Connection name="A 股数据" detail="行情 / 公告 / 新闻 · 仅读取"/><Connection name="外部日历" detail="Google / Outlook · 默认仅查看"/></section><section className="card full"><SyncHead title="安全与隐私"/><div className="security-grid"><div><b>最小权限</b><p>资金与证券连接仅允许读取。应用没有转账、支付、下单、撤单或修改账户的代码路径。</p></div><div><b>凭据隔离</b><p>密钥只放在服务端环境变量；不进入前端包、日志、数据库、页面或版本控制。</p></div><div><b>脱敏规则</b><p>账号仅显示机构、类型和末四位；日志移除 Token、完整账号及个人身份字段。</p></div><div><b>存储风险</b><p>日程存在 D1，平台静态加密并通过 TLS 传输；服务运营方在必要运维中仍可能接触服务端数据。</p></div></div></section></div></div> }
-function Connection({name,detail}:{name:string;detail:string}) { return <div className="connection"><span>×</span><div><b>{name}</b><small>{detail}</small></div><em>未连接</em><button className="button ghost">配置</button></div> }
+function Settings({demo,setDemo,stockConnected}:{demo:boolean;setDemo:(v:boolean)=>void;stockConnected:boolean}) { return <div className="page"><SyncHead title="设置与数据治理" eyebrow="PRIVACY & CONNECTIONS"/><div className="settings-grid"><section className="card"><SyncHead title="数据模式"/><label className="setting-row"><div><b>模拟数据模式</b><span>所有资金与股票数值均为显著标注的界面样例</span></div><input type="checkbox" checked={demo} onChange={e=>setDemo(e.target.checked)}/></label><label className="setting-row"><div><b>默认股票市场</b><span>当前自动周报固定为 A 股</span></div><select><option>A 股</option></select></label><div className="setting-row"><div><b>默认时区</b><span>日程、抓取时间与同步时间统一</span></div><strong>Asia/Shanghai</strong></div></section><section className="card"><SyncHead title="数据连接"/><Connection name="资金账户" detail="银行 / 券商 / 支付 · 仅余额与流水查询"/><Connection name="A 股数据" detail="AKShare 免费行情与财务 · 仅读取" connected={stockConnected}/><Connection name="外部日历" detail="Google / Outlook · 默认仅查看"/></section><section className="card full"><SyncHead title="安全与隐私"/><div className="security-grid"><div><b>最小权限</b><p>资金与证券连接仅允许读取。应用没有转账、支付、下单、撤单或修改账户的代码路径。</p></div><div><b>凭据隔离</b><p>密钥只放在服务端环境变量；不进入前端包、日志、数据库、页面或版本控制。</p></div><div><b>脱敏规则</b><p>账号仅显示机构、类型和末四位；日志移除 Token、完整账号及个人身份字段。</p></div><div><b>存储风险</b><p>日程和周报存在 D1，平台静态加密并通过 TLS 传输；服务运营方在必要运维中仍可能接触服务端数据。</p></div></div></section></div></div> }
+function Connection({name,detail,connected=false}:{name:string;detail:string;connected?:boolean}) { return <div className="connection"><span>{connected?"✓":"×"}</span><div><b>{name}</b><small>{detail}</small></div><em>{connected?"已接入":"未连接"}</em><button className="button ghost">{connected?"查看":"配置"}</button></div> }
