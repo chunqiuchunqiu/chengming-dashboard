@@ -23,8 +23,11 @@ test("credentials stay server-side placeholders", async () => {
 
 test("calendar persistence is user-scoped", async () => {
   const route = await read("app/api/events/route.ts");
-  assert.match(route, /oai-authenticated-user-id/);
-  assert.match(route, /eq\(calendarEvents\.userId, userId\(request\)\)/);
+  const security = await read("lib/finance/security.ts");
+  assert.match(security, /oai-authenticated-user-id/);
+  assert.match(route, /requireUserId\(request\)/);
+  assert.match(route, /eq\(calendarEvents\.userId, userId\)/);
+  assert.doesNotMatch(route, /local-preview/);
   assert.match(route, /title.*slice\(0, 120\)/s);
 });
 

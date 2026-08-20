@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FinanceDashboard, FinanceHomeSummary } from "./finance-dashboard";
 
 type View = "home" | "funds" | "stocks" | "calendar" | "settings";
 type EventItem = {
@@ -193,7 +194,7 @@ export function Dashboard() {
       <div className="readonly"><span>✓</span><div><b>只读安全模式</b><small>资金操作已永久禁用</small></div></div>
     </aside>
     <main>
-      {!demo && <div className={`notice ${stockReport ? "safe" : "warning"}`}><b>真实数据模式 · {stockReport ? "A 股周报已接入" : "等待首份周报"}</b><span>{stockReport ? `数据截至 ${stockReport.dataAsOf}，资金账户仍未连接。` : "GitHub 周任务运行并写入首份报告后会自动显示；页面不会编造行情或新闻数据。"}</span></div>}
+      {!demo && <div className={`notice ${stockReport ? "safe" : "warning"}`}><b>真实数据模式 · 账单离线导入可用</b><span>{stockReport ? `A 股周报数据截至 ${stockReport.dataAsOf}；资金仅统计标准化账单与手动收入，不代表账户余额。` : "资金可通过官方账单离线导入；股票周报等待 GitHub 周任务写入，页面不会编造数据。"}</span></div>}
       {demo && <div className="notice demo"><b>模拟数据</b><span>用于界面演示，不代表任何真实账户、实时行情或投资结论。</span><button onClick={() => setDemo(false)}>退出演示</button></div>}
       {view === "home" && <Home demo={demo} events={upcoming} report={stockReport} loadingReport={loadingReport} openCalendar={() => setView("calendar")} openStocks={() => setView("stocks")} openFunds={() => setView("funds")} />}
       {view === "funds" && <Funds demo={demo} />}
@@ -211,7 +212,7 @@ function Home({ demo, events, report, loadingReport, openCalendar, openStocks, o
   return <div className="page">
     <div className="welcome"><div><div className="eyebrow">2026年8月13日 · 星期四</div><h1>早上好，保持清醒的判断。</h1><p>你的资产、研究与日程，都在一处有据可查。</p></div><button className="button primary" onClick={() => location.reload()}>↻ 同步全部</button></div>
     <div className="home-grid">
-      <section className="card asset-card"><SyncHead title="资产概览" eyebrow="FINANCIAL POSITION" action={openFunds} />{demo ? <><div className="asset-main"><div><small>净资产</small><strong>¥343,930</strong><em>↑ 2.4% 较上月</em></div><div className="ring"><b>72%</b><small>金融资产</small></div></div><div className="mini-stats"><div><span>总资产</span><b>¥376,530</b></div><div><span>总负债</span><b className="negative">¥32,600</b></div><div><span>本月净流入</span><b className="positive">+¥8,420</b></div></div><Source /></> : <EmptyConnect kind="资金账户" />}</section>
+      <section className="card asset-card"><SyncHead title="资产概览" eyebrow="FINANCIAL POSITION" action={openFunds} />{demo ? <><div className="asset-main"><div><small>净资产</small><strong>¥343,930</strong><em>↑ 2.4% 较上月</em></div><div className="ring"><b>72%</b><small>金融资产</small></div></div><div className="mini-stats"><div><span>总资产</span><b>¥376,530</b></div><div><span>总负债</span><b className="negative">¥32,600</b></div><div><span>本月净流入</span><b className="positive">+¥8,420</b></div></div><Source /></> : <FinanceHomeSummary openFunds={openFunds} />}</section>
       <section className="card research-card"><SyncHead title="每周股票研究" eyebrow="WEEKLY RESEARCH" action={openStocks} />{demo ? <><div className="report-title"><span>第 33 周</span><div><b>A股重点关注清单</b><small>10 只 · 研究观察，不构成投资建议</small></div><strong>已生成</strong></div><div className="ticker-row">{stocks.slice(0,4).map((s,i) => <div key={s[1]}><span>{i+1}</span><b>{s[0]}</b><small>{s[1]} · {s[2]}</small><em className={i===2 ? "neutral" : "positive"}>{i===2 ? "观察" : "重点"}</em></div>)}</div><button className="text-link" onClick={openStocks}>查看全部 10 只及研究依据 →</button><Source /></> : loadingReport ? <div className="loading"><i/><b>正在加载 A 股周报…</b></div> : report ? <><div className="report-title"><span>{report.isoYearWeek}</span><div><b>A 股重点研究清单</b><small>{report.stocks.length} 只 · 数据截至 {report.dataAsOf}</small></div><strong>{report.status === "success" ? "已生成" : "部分数据"}</strong></div><div className="ticker-row">{report.stocks.slice(0,4).map(item => <div key={item.code}><span>{item.rank}</span><b>{item.name}</b><small>{item.code} · {item.industry}</small><em className="positive">{item.score} 分</em></div>)}</div><button className="text-link" onClick={openStocks}>查看全部及研究依据 →</button><Source text={report.dataProvider} updatedAt={reportTime(report.generatedAt)} /></> : <EmptyConnect kind="A 股周报数据源" />}</section>
       <section className="card today-card"><SyncHead title="今日日程" eyebrow="TODAY" action={openCalendar} />{events.length ? <div className="event-list">{events.slice(0,4).map(e => <EventRow key={e.id} event={e} />)}</div> : <div className="empty compact"><span className="empty-icon">✓</span><div><strong>近期没有日程</strong><p>添加一条日程，倒计时会在这里出现。</p></div></div>}<button className="text-link" onClick={openCalendar}>打开日历与未来 7 天 →</button><Source text="个人日程数据库" /></section>
     </div>
@@ -220,14 +221,15 @@ function Home({ demo, events, report, loadingReport, openCalendar, openStocks, o
 }
 
 function Funds({ demo }: { demo: boolean }) {
+  if (!demo) return <FinanceDashboard />;
   return <div className="page"><SyncHead title="资金动向" eyebrow="READ-ONLY FINANCE" action={() => location.reload()} />
     <div className="notice safe"><b>查询专用</b><span>账户连接只允许余额、流水和持仓查询。转账、支付、交易、下单、撤单与账户修改均未实现。</span></div>
-    {!demo ? <div className="card"><EmptyConnect kind="银行、证券、基金或支付账户" /><div className="connector-list"><b>建议接入</b><span>银行官方 Open Banking（余额/流水只读）</span><span>券商开放平台（资产/持仓/成交历史只读）</span><span>支付宝/微信官方账单导出（离线导入）</span></div></div> : <>
+    <>
       <div className="metric-grid"><Metric label="总资产" value="¥376,530" delta="+2.1% 较上月"/><Metric label="总负债" value="¥32,600" delta="−4.8% 较上月" negative/><Metric label="净资产" value="¥343,930" delta="+2.4% 较上月"/><Metric label="本月净现金流" value="+¥8,420" delta="+12.6% 环比"/></div>
       <div className="two-col"><section className="card"><SyncHead title="资金流入 / 流出趋势" eyebrow="近 12 周"/><div className="legend"><span><i className="in"/>流入</span><span><i className="out"/>流出</span></div><div className="line-chart"><div className="grid-lines"/><svg viewBox="0 0 600 180" role="img" aria-label="模拟资金流入流出趋势折线图"><polyline className="line-in" points={cashTrend.map((v,i)=>`${i*54},${165-v*1.45}`).join(" ")}/><polyline className="line-out" points={outTrend.map((v,i)=>`${i*54},${165-v*1.45}`).join(" ")}/></svg><div className="x-labels"><span>5月</span><span>6月</span><span>7月</span><span>8月</span></div></div><Source/></section>
       <section className="card"><SyncHead title="支出分类" eyebrow="本月 ¥16,410"/><div className="spending">{spending.map(s=><div key={s[0]}><span>{s[0]}</span><div><i style={{width:`${s[1]}%`}}/></div><b>{s[2]}</b><em>{s[1]}%</em></div>)}</div><Source/></section></div>
       <div className="two-col"><section className="card"><SyncHead title="账户与资产分布" eyebrow="4 个模拟账户"/><div className="account-list">{accounts.map(a=><div key={a[0]}><span className="account-icon">{a[0].slice(0,1)}</span><div><b>{a[0]}</b><small>{a[1]}</small></div><strong>{a[2]}</strong><em>{a[3]}</em></div>)}</div><Source/></section><section className="card"><SyncHead title="异常与大额变动" eyebrow="规则阈值 ¥10,000"/><div className="alert-row"><span>!</span><div><b>模拟大额支出 · ¥12,800</b><small>8月11日 · 家居 · 招商银行 · 4821</small><p>金额为近 90 日同分类均值的 3.2 倍，请人工确认。</p></div></div><div className="compare"><div><span>本周支出 vs 上周</span><b className="negative">↑ 18.2%</b></div><div><span>本月收入 vs 上月</span><b className="positive">↑ 6.7%</b></div></div><Source/></section></div>
-    </>}
+    </>
   </div>;
 }
 

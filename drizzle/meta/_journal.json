@@ -1,5 +1,27 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1786596000000,
+      "tag": "0000_calendar_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786680000000,
+      "tag": "0001_stock_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787207747819,
+      "tag": "0002_finance_bill_import",
+      "breakpoints": true
+    }
+  ]
 }
