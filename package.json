@@ -9,13 +9,13 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
-    "test": "node --test tests/dashboard-contract.test.mjs && python -m unittest tests/test_a_share_report.py",
+    "test": "node --test tests/dashboard-contract.test.mjs tests/finance-contract.test.mjs && node -r ./tests/tsx-os-shim.cjs --import tsx --test tests/finance.test.ts && python -m unittest tests/test_a_share_report.py",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern work --ignore-pattern outputs",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "node -r ./tests/tsx-os-shim.cjs ./node_modules/drizzle-kit/bin.cjs generate"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
-    "next": "16.2.6",
+    "next": "16.3.1",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
@@ -32,6 +32,7 @@
     "eslint-config-next": "16.2.6",
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
+    "tsx": "4.23.12",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
     "vite": "8.0.13",
